@@ -26,4 +26,10 @@ dependencies {
 
     //Selenium Browser
     implementation("org.seleniumhq.selenium:selenium-java:4.25.0")
+
+    // 1. Für die HTTP-Anfragen (Post-Requests an Google)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // 2. Damit du die JSON-Daten ganz simpel erstellen und auslesen kannst
+    implementation("org.json:json:20240303")
 }

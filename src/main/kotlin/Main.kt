@@ -6,6 +6,7 @@ import org.jsoup.select.Elements
 import org.openqa.selenium.chrome.ChromeDriver
 import org.openqa.selenium.chrome.ChromeOptions
 
+val apiKeys = listOf("AQ.Ab8RN6K2A8ibpzQxiJ-WQsu_yxaVMLZHnauFXRMblx7n1oAjuQ","AQ.Ab8RN6LVUJMk6voVAOjkfP7KINliCHxX8hQ0SerkmCfJvv373A")
 
 fun main() = runBlocking {
     println("Programm gestartet!")
@@ -52,7 +53,7 @@ fun analysiereNachGeniusErgebnissen(htmlString: String): String? {
         val text = link.text()
 
         // Google verpackt Links im modernen Layout oft in Weiterleitungen oder Daten-Pfaden
-        if (href.contains("uta-net.com")) {
+        if (href.contains(SITE.GENIUS.searchSuffix)) {
 
             // Sauber machen, falls Google einen Redirect-Müll drangehängt hat
             var saubereUrl = href
@@ -162,21 +163,41 @@ fun fetchJPopLyricsWithSelenium(artist: String, song: String) {
 
             // 💡 ULTIMATIVER NOTFALL-LOG: Lass uns das HTML im Projektordner speichern,
             // um zu sehen, was Google vor uns versteckt!
-            java.io.File("google_debug.html").writeText(driver.pageSource!!)
-            println("📝 Debug-HTML gespeichert unter 'google_debug.html'. Schau da mal rein!")
+            //java.io.File("google_debug.html").writeText(driver.pageSource!!)
+            //println("📝 Debug-HTML gespeichert unter 'google_debug.html'. Schau da mal rein!")
 
-            //Weiter mit Genius Suche
-            println("\n Starte zweite Suche mit Genius!")
-            driver.get("https://www.google.com/search?q=$geniusString")
-            println("Ich suche das:https://www.google.com/search?q=$geniusString")
+            //Weiter mit Ai-Sprachflip von Englisch zu Japanischen Zeichen
+            val aiUta = Gemini().optimiereSucheMitInternetGemini(artist, song, apiKeys[1])
+            val aiUtaString = """${aiUta.first} ${aiUta.second} ${SITE.UTA.searchSuffix}"""
+            println("\n Starte zweite Suche mit translated Input!")
+            driver.get("https://www.google.com/search?q=$aiUtaString")
+            println("Ich suche das:https://www.google.com/search?q=$aiUtaString")
 
             // Falls ein Captcha kommt Debug
             if (driver.pageSource!!.contains("g-recaptcha")) {
                 println("⚠️ Google fordert ein CAPTCHA!...")
             }
 
-            val finaleGeniusLyricsURL: String? = analysiereNachGeniusErgebnissen(driver.pageSource!!)
+            val finaleAiUtaLyricsURL: String? = analysiereNachUtaErgebnissen(driver.pageSource!!)
 
+            if (finaleAiUtaLyricsURL == null) {
+                println("❌ Auch in der Tiefenanalyse wurde kein Uta-Net Link gefunden.")
+
+                //Weiter mit Genius Suche
+                //println("\n Starte dritte Suche mit Genius!")
+                //driver.get("https://www.google.com/search?q=$geniusString")
+                //println("Ich suche das:https://www.google.com/search?q=$geniusString")
+
+                // Falls ein Captcha kommt Debug
+                if (driver.pageSource!!.contains("g-recaptcha")) {
+                    println("⚠️ Google fordert ein CAPTCHA!...")
+                }
+
+                val finaleGeniusLyricsURL: String? = analysiereNachGeniusErgebnissen(driver.pageSource!!)
+
+                return
+            }
+            utaLyricsLaden(finaleAiUtaLyricsURL, artist, song)
             return
         }
 
