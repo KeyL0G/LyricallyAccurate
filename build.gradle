@@ -1,0 +1,29 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.9.22'
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spotify API Wrapper & Jackson-Fixes gegen die Sicherheitslücke
+    implementation 'se.michaelthelin.spotify:spotify-web-api-java:8.4.0'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.21.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
+
+    // Jsoup für die Lyrics
+    implementation 'org.jsoup:jsoup:1.17.2'
+
+    // Coroutines für die Schleife
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0'
+
+    // Macht die SLF4J-Warnung beim Starten weg
+    implementation 'org.slf4j:slf4j-simple:2.0.12'
+
+    //Selenium Browser
+    implementation("org.seleniumhq.selenium:selenium-java:4.25.0")
+}
