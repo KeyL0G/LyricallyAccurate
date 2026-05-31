@@ -142,8 +142,8 @@ fun fetchJPopLyricsWithSelenium(artist: String, song: String) {
     try {
 
         val utaString = """$artist $song ${SITE.UTA.searchSuffix}"""
-        val geniusString = """$artist $song ${SITE.GENIUS.searchSuffix}"""
-        val nonString = """$artist $song ${SITE.LYRICAL_NONSENSE.searchSuffix}"""
+        val geniusString = """$artist $song ${SITE.GENIUS.searchSuffix} romanized"""
+        val nonString = """$artist $song ${SITE.LYRICAL_NONSENSE.searchSuffix} romanized"""
 
 
         println("🚀 Starte getarnten Chrome-Browser...")
