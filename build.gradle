@@ -7,19 +7,20 @@ plugins {
 }
 
 // 🌟 DIESER BLOCK FEHLT VERMUTLICH ODER IST LEER:
-compose {
-    desktop {
-        application {
-            mainClass = "com.example.MainKt" // <-- Hier MUSS der Pfad zu deiner main() drinstehen!
+compose.desktop {
+    application {
+        mainClass = "com.example.MainKt"
 
-            nativeDistributions {
-                targetFormats(TargetFormat.Msi)
-                packageName = "LyricallyAccurate"
-                packageVersion = "1.0.0"
-            }
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            packageVersion = "1.0.0"
+
+            // 🎯 HIER REIN: Wir sagen dem Packager direkt, welche Module er erzwingen soll
+            modules("java.net.http", "java.scripting")
         }
     }
 }
+
 
 group = 'org.example'
 version = '1.0-SNAPSHOT'
