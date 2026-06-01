@@ -307,18 +307,17 @@ class Scraper(
 
     fun getProtectedGoogleDriver(): ChromeDriver {
         val options = ChromeOptions()
-
-        // Wir lassen Headless testweise aktiv!
         options.addArguments("--headless=new")
 
-        // 🔥 DER TRICK: Hier verknüpfst du dein echtes Chrome-Profil.
-        // ERSETZE 'DeinBenutzername' durch deinen echten Windows-Namen (z.B. C:\Users\max\...)
-        options.addArguments("--user-data-dir=C:\\Users\\Kaan\\AppData\\Local\\Google\\Chrome\\User Data")
+        // 🌟 AUTOMATISCH: Holt den Windows-Namen des aktuellen Nutzers (z.B. "Kaan" oder "Max")
+        val windowsUser = System.getProperty("user.name")
 
-        // Das 'Default'-Profil ist meistens dein Hauptprofil, wo du eingeloggt bist.
+        // Dynamischer Pfad zu den Chrome-User-Daten des jeweiligen PCs
+        val chromePath = "C:\\Users\\$windowsUser\\AppData\\Local\\Google\\Chrome\\User Data"
+        options.addArguments("--user-data-dir=$chromePath")
         options.addArguments("--profile-directory=Default")
 
-        // Die restlichen Tarnungen bleiben drin
+        // Die restlichen Tarnungen gegen Captchas
         options.addArguments("--disable-blink-features=AutomationControlled")
         options.setExperimentalOption("excludeSwitches", listOf("enable-automation"))
         options.setExperimentalOption("useAutomationExtension", false)
