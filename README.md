@@ -30,10 +30,11 @@ Das Besondere: Die App gleicht Titel über den **japanischen Musikmarkt** ab, um
 Da sich die App aktuell im Spotify-Entwicklungsmodus befindet, können nur autorisierte Accounts die Spotify-Schnittstelle nutzen.
 
 1. **Freischaltung anfordern:** Schreib mir eine kurze Nachricht mit der E-Mail-Adresse, die mit deinem Spotify-Account verknüpft ist, damit ich dich im Spotify Developer Dashboard freischalten kann.
-2. **App herunterladen:** Lade dir die fertige Windows-Version (`.exe`) direkt hier über **[Google Drive](https://drive.google.com/drive/folders/10344WcocCe8dA2uGUTH4lyujony_r06_?hl=DE)** herunter.
+2. **App herunterladen:** Lade dir die fertige Test-Windows-Version (`.exe`) direkt hier über **[Google Drive](https://drive.google.com/drive/folders/10344WcocCe8dA2uGUTH4lyujony_r06_?hl=DE)** herunter.
 3. **Starten:** Verschiebe die heruntergeladene `.exe` einfach an einen ungeschützten Ort (z. B. direkt auf deinen Desktop oder in deinen Benutzerordner) und starte sie per Doppelklick.
 
 *Hinweis: Bitte die `.exe` nicht im Windows-Systemordner (`C:\Program Files\`) ausführen, da die App dort keine Schreibrechte hat, um die lokale Anmeldung (`spotify_tokens.txt`) zu sichern.*
+*Hinweis: Es ist ein sehr rudimentaler pre-release und in keiner Hinsicht vollendet.*
 
 ---
 
