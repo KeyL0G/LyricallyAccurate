@@ -4,7 +4,6 @@ import se.michaelthelin.spotify.SpotifyApi
 import se.michaelthelin.spotify.model_objects.specification.Track
 import java.io.File
 import java.net.URI
-import java.util.Scanner
 
 class SpotifyService(clientId: String, clientSecret: String) {
 
@@ -16,72 +15,95 @@ class SpotifyService(clientId: String, clientSecret: String) {
         .build()
 
     /**
-     * Versucht zuerst, ein gespeichertes Token zu laden.
-     * Falls keins existiert, wird der manuelle Link-Prozess gestartet.
+     * Versucht den automatischen Login über das gespeicherte Refresh-Token.
      */
-    fun authentifizieren() {
+    fun versucheAutomatischenLogin(): Boolean {
         if (tokenFile.exists()) {
             try {
-                // Gespeichertes Refresh-Token aus der Datei lesen
                 val savedRefreshToken = tokenFile.readText().trim()
+                if (savedRefreshToken.isEmpty()) {
+                    tokenFile.delete()
+                    return false
+                }
+
+                // 1. WICHTIG: Setze Client-Daten und Refresh-Token
                 spotifyApi.refreshToken = savedRefreshToken
 
-                // Ein frisches Access-Token von Spotify anfordern
-                val clientCredentialsRequest = spotifyApi.authorizationCodeRefresh().build()
-                val credentials = clientCredentialsRequest.execute()
+                // 2. Den Request bauen
+                val refreshRequest = spotifyApi.authorizationCodeRefresh().build()
+                val credentials = refreshRequest.execute()
 
-                spotifyApi.accessToken = credentials.accessToken
-                println("🔄 Automatisch via Refresh-Token eingeloggt!")
-                return // Authentifizierung erfolgreich beendet!
+                if (credentials.accessToken != null) {
+                    spotifyApi.accessToken = credentials.accessToken
+                    println("🔄 Automatisch via Refresh-Token eingeloggt! (Token: ${credentials.accessToken.take(10)}...)")
+
+                    if (credentials.refreshToken != null) {
+                        spotifyApi.refreshToken = credentials.refreshToken
+                        tokenFile.writeText(credentials.refreshToken)
+                    }
+                    return true
+                }
             } catch (e: Exception) {
-                println("⚠️ Automatischer Login fehlgeschlagen (${e.message}). Starte Setup neu...")
+                println("⚠️ Automatischer Login fehlgeschlagen (${e.message}). Lösche ungültiges Token...")
+                try {
+                    tokenFile.delete()
+                } catch (delEx: Exception) {}
             }
         }
-
-        // --- MANUELLER FLOW (Wird nur ausgeführt, wenn keine Datei da ist) ---
-        val authorizationCodeUriRequest = spotifyApi.authorizationCodeUri()
-            .scope("user-read-currently-playing")
-            .show_dialog(true)
-            .build()
-
-        val authUri = authorizationCodeUriRequest.execute()
-
-        println("🔗 Bitte öffne diesen Link EINMALIG in Firefox:")
-        println(authUri)
-        println("\nKopiere nach dem Akzeptieren die GESAMTE localhost-URL hier hinein:")
-
-        val scanner = Scanner(System.`in`)
-        val antwortUrl = scanner.nextLine()
-
-        val code = antwortUrl.substringAfter("code=").substringBefore("&")
-
-        val authorizationCodeRequest = spotifyApi.authorizationCode(code).build()
-        val credentials = authorizationCodeRequest.execute()
-
-        spotifyApi.accessToken = credentials.accessToken
-        spotifyApi.refreshToken = credentials.refreshToken
-
-        // 🔥 Das Refresh-Token für die Zukunft auf der Festplatte speichern
-        tokenFile.writeText(credentials.refreshToken)
-        println("✅ Spotify-Verbindung erfolgreich initialisiert und Token gespeichert!\n")
+        return false
     }
 
     /**
-     * Holt den aktuell spielenden Song.
+     * Generiert den Spotify-Link für das Compose-Popup mit den RICHTIGEN Scopes.
+     */
+    fun holeLoginLink(): String {
+        // 🎯 HIER: Wir fordern explizit die Berechtigung an, den aktuellen Song zu lesen!
+        val authorizationCodeUriRequest = spotifyApi.authorizationCodeUri()
+            .scope("user-read-currently-playing")
+            .show_dialog(true) // Zwingt Spotify, dir den "Erlauben"-Button anzuzeigen
+            .build()
+        return authorizationCodeUriRequest.execute().toString()
+    }
+
+    /**
+     * 🌟 NEU: Verarbeitet die vom User eingefügte Localhost-URL und speichert das Token.
+     */
+    fun verarbeiteAntwortUrl(antwortUrl: String): Boolean {
+        return try {
+            val code = antwortUrl.substringAfter("code=").substringBefore("&")
+            val authorizationCodeRequest = spotifyApi.authorizationCode(code).build()
+            val credentials = authorizationCodeRequest.execute()
+
+            spotifyApi.accessToken = credentials.accessToken
+            spotifyApi.refreshToken = credentials.refreshToken
+
+            // Token für die Zukunft sichern
+            tokenFile.writeText(credentials.refreshToken)
+            println("✅ Spotify-Verbindung erfolgreich initialisiert und Token gespeichert!")
+            true
+        } catch (e: Exception) {
+            println("❌ Fehler beim Verarbeiten der URL: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Holt den aktuell spielenden Song (Sichere Version ohne Spamming).
      */
     fun getAktuellenSong(): Pair<String, String>? {
-        try {
-            // 1. Session-Token aktualisieren, damit Spotify uns nicht rauswirft
-            val refreshRequest = spotifyApi.authorizationCodeRefresh().build()
-            val credentials = refreshRequest.execute()
-            spotifyApi.accessToken = credentials.accessToken
+        var versuche = 0
+        val maximaleVersuche = 2
 
-            // 2. Aktuellen Song abfragen
-            val request = spotifyApi.usersCurrentlyPlayingTrack.build()
-            val currentlyPlaying = request.execute()
+        while (versuche < maximaleVersuche) {
+            try {
+                val request = spotifyApi.usersCurrentlyPlayingTrack.build()
+                val currentlyPlaying = request.execute()
 
-            // 3. Prüfen, ob überhaupt Musik läuft
-            if (currentlyPlaying != null && currentlyPlaying.is_playing) {
+                // Wenn die API antwortet, aber aktuell einfach keine Musik läuft
+                if (currentlyPlaying == null || !currentlyPlaying.is_playing) {
+                    return null
+                }
+
                 val track = currentlyPlaying.item as? Track
                 if (track != null) {
                     val artistName = track.artists[0].name
@@ -93,7 +115,7 @@ class SpotifyService(clientId: String, clientSecret: String) {
 
                     var finalSongName = standardSongName
 
-                    // --- SCHRITT A: ISRC-ABGLEICH VERSUCHEN ---
+                    // --- SCHRITT A: ISRC-ABGLEICH ---
                     if (track.externalIds != null && track.externalIds.externalIds.containsKey("isrc")) {
                         val isrc = track.externalIds.externalIds["isrc"]
                         println("   ISRC-Code gefunden: $isrc")
@@ -111,20 +133,15 @@ class SpotifyService(clientId: String, clientSecret: String) {
                                 if (japanTrack.name != standardSongName) {
                                     println("   🎯 Treffer! Titel unterscheidet sich. Nutze Originalname: '${japanTrack.name}'")
                                     finalSongName = japanTrack.name
-                                } else {
-                                    println("   ℹ️ Der Name ist auch auf dem japanischen Markt identisch.")
                                 }
-                            } else {
-                                println("   ❌ Keine Tracks unter dieser ISRC auf dem JP-Markt gefunden.")
                             }
                         } catch (e: Exception) {
                             println("   ❌ Fehler bei JP-Markt-Abfrage: ${e.message}")
                         }
                     } else {
-                        // --- SCHRITT B: TEXT-FALLBACK (Wenn kein ISRC-Code da ist) ---
+                        // --- SCHRITT B: TEXT-FALLBACK ---
                         println("   ⚠️ Kein ISRC-Code hinterlegt. Starte Text-Fallback-Suche auf dem JP-Markt...")
                         try {
-                            // Wir suchen im japanischen Spotify-Katalog nach "Künstler Songname"
                             val textSearch = spotifyApi.searchTracks("$artistName $standardSongName")
                                 .market(com.neovisionaries.i18n.CountryCode.JP)
                                 .limit(1)
@@ -138,11 +155,7 @@ class SpotifyService(clientId: String, clientSecret: String) {
                                 if (japanTrack.name != standardSongName) {
                                     println("   🎯 Treffer via Textsuche! Ändere Namen zu: '${japanTrack.name}'")
                                     finalSongName = japanTrack.name
-                                } else {
-                                    println("   ℹ️ Auch die Textsuche in Japan liefert denselben Namen.")
                                 }
-                            } else {
-                                println("   ❌ Textsuche auf dem JP-Markt brachte keine Ergebnisse.")
                             }
                         } catch (e: Exception) {
                             println("   ❌ Fehler bei Text-Fallback-Suche: ${e.message}")
@@ -150,16 +163,40 @@ class SpotifyService(clientId: String, clientSecret: String) {
                     }
 
                     println("-----------------------------------------\n")
-
-                    // ERFOLG: Wir geben das fertige Paar (Künstler, optimierter Songname) zurück
                     return Pair(artistName, finalSongName)
                 }
-            }
-        } catch (e: Exception) {
-            println("❌ Fehler beim Abfragen von Spotify: ${e.message}")
-        }
 
-        // FEHLSCHLAG: Wenn Spotify pausiert ist oder ein Fehler auftrat
-        return null
+                // Falls 'item' kein Track war (z.B. Podcast), Loop beenden
+                break
+
+            } catch (e: se.michaelthelin.spotify.exceptions.SpotifyWebApiException) {
+                val ist401 =
+                    e.message?.contains("401") == true || e.message?.contains("unauthorized", ignoreCase = true) == true
+
+                if (ist401 && versuche == 0) {
+                    println("🔄 Access-Token abgelaufen. Erneuere Session einmalig...")
+                    try {
+                        val refreshRequest = spotifyApi.authorizationCodeRefresh().build()
+                        val credentials = refreshRequest.execute()
+
+                        if (credentials.accessToken != null) {
+                            spotifyApi.accessToken = credentials.accessToken
+                            versuche++
+                            continue // Springt zurück an den Anfang der While-Schleife
+                        }
+                    } catch (refreshEx: Exception) {
+                        println("❌ Notfall-Refresh fehlgeschlagen: ${refreshEx.message}")
+                        break
+                    }
+                } else {
+                    println("❌ Spotify-API-Fehler: ${e.message}")
+                    break
+                }
+            } catch (e: Exception) {
+                println("❌ Allgemeiner Netzwerkfehler beim Abfragen von Spotify: ${e.message}")
+                break
+            }
+        }
+        return null // Fallback, falls die Schleife ohne Return durchbricht
     }
 }

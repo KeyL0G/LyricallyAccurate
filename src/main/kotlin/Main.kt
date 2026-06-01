@@ -5,30 +5,32 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.openqa.selenium.WebDriver
+import java.awt.Desktop
+import java.net.URI
 
 var javaDriverFuerNotfall: org.openqa.selenium.WebDriver? = null
 
 fun main() = application {
+
+    val spotifyService = SpotifyService("66343fabfd474311af66d606bf8cf353", "540f82d94f3b4fd28249343495fcf11a")
+
     Window(
         onCloseRequest = {
-            // 🌟 BEVOR das Fenster schließt, killen wir den Browser, falls er noch offen ist
             try {
                 if (javaDriverFuerNotfall != null) {
                     javaDriverFuerNotfall?.quit()
                     println("🤖 Zombie-Browser erfolgreich beim Schließen der App abgewürgt!")
                 }
             } catch (e: Exception) {
-                // Falls er im Hintergrund eh schon zu war
+                // Ignorieren
             }
-
-            // Jetzt erst beenden wir die Compose-Anwendung
             exitApplication()
         },
         title = "Lyrically Accurate",
@@ -36,14 +38,104 @@ fun main() = application {
     ) {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                ScraperUI()
+                app(spotifyService)
             }
         }
     }
 }
 
 @Composable
-fun ScraperUI() {
+fun app(spotifyService: SpotifyService) {
+    var zeigeLoginPopup by remember { mutableStateOf(false) }
+    var eingegebeneUrl by remember { mutableStateOf("") }
+    var loginFehler by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        val eingeloggt = spotifyService.versucheAutomatischenLogin()
+        isLoading = false
+        if (!eingeloggt) {
+            zeigeLoginPopup = true
+        }
+    }
+
+    if (isLoading) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+    } else {
+        // 🎯 HIER: Wir reichen den bereits eingeloggten Service an die UI weiter!
+        scraperUI(spotifyService)
+    }
+
+    if (zeigeLoginPopup) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
+            Surface(
+                modifier = Modifier.width(400.dp).wrapContentHeight().padding(16.dp),
+                shape = MaterialTheme.shapes.medium,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Spotify Verbindung erforderlich", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Klicke auf den Button, logge dich im Browser ein und füge die Localhost-URL hier ein:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Button(onClick = {
+                        try {
+                            val link = spotifyService.holeLoginLink()
+                            Desktop.getDesktop().browse(URI(link))
+                        } catch (e: Exception) {
+                            println("Fehler beim Browser-Öffnen: ${e.message}")
+                        }
+                    }) {
+                        Text("🔗 Im Browser einloggen")
+                    }
+
+                    OutlinedTextField(
+                        value = eingegebeneUrl,
+                        onValueChange = { eingegebeneUrl = it },
+                        label = { Text("Localhost-URL hier rein") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    if (loginFehler) {
+                        Text("❌ Fehler beim Verbinden. URL korrekt?", color = MaterialTheme.colorScheme.error)
+                    }
+
+                    Button(
+                        onClick = {
+                            val erfolg = spotifyService.verarbeiteAntwortUrl(eingegebeneUrl)
+                            if (erfolg) {
+                                val tokenAktiviert = spotifyService.versucheAutomatischenLogin()
+                                if (tokenAktiviert) {
+                                    loginFehler = false
+                                    zeigeLoginPopup = false
+                                } else {
+                                    loginFehler = true
+                                }
+                            } else {
+                                loginFehler = true
+                            }
+                        },
+                        enabled = eingegebeneUrl.isNotBlank()
+                    ) {
+                        Text("Verbinden")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun scraperUI(spotifyService: SpotifyService) { // 🎯 HIER: Parameter hinzugefügt
     var artistInput by remember { mutableStateOf("") }
     var songInput by remember { mutableStateOf("") }
     var statusText by remember { mutableStateOf("Bereit. Leer lassen zieht aktuellen Spotify-Song!") }
@@ -53,7 +145,6 @@ fun ScraperUI() {
     val coroutineScope = rememberCoroutineScope()
 
     Row(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // --- LINKE SEITE: Controls ---
         Column(modifier = Modifier.weight(1.2f).padding(end = 8.dp)) {
             Text("Lyrics Detektiv", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(16.dp))
@@ -81,21 +172,14 @@ fun ScraperUI() {
             Button(
                 onClick = {
                     isLoading = true
-                    statusText = "Spotify-Status wird geprüft und Browser gestartet..."
+                    statusText = "Browser wird gestartet..."
                     lyricsOutput = ""
 
-                    // Coroutine sorgt dafür, dass die UI während des Scrapings nicht einfriert
                     coroutineScope.launch(Dispatchers.IO) {
                         try {
-                            // 1. Spotify Service starten
-                            val clientId = "66343fabfd474311af66d606bf8cf353"
-                            val clientSecret = "540f82d94f3b4fd28249343495fcf11a"
-                            val spotifyService = SpotifyService(clientId, clientSecret)
+                            // 🎯 HIER: Die doppelten Zeilen (val clientId = ...) wurden gelöscht!
+                            // Wir nutzen jetzt direkt das übergebene 'spotifyService' Objekt.
 
-                            // Authentifizierung triggern
-                            spotifyService.authentifizieren()
-
-                            // 2. Song bestimmen: Entweder aus der UI oder als Fallback von Spotify
                             val artist: String
                             val song: String
 
@@ -112,14 +196,13 @@ fun ScraperUI() {
                                     song = aktuellerSong.second.trim()
                                     statusText = "🎶 Spotify-Treffer: $artist - $song. Starte Suche..."
                                 } else {
-                                    statusText = "📭 Spotify läuft nicht und keine UI-Eingabe vorhanden."
+                                    statusText = "📭 Spotify läuft nicht oder ist pausiert."
                                     isLoading = false
-                                    return@launch // Bricht die Coroutine sauber ab
+                                    return@launch
                                 }
                             }
 
                             // 3. Scraping-Prozess deiner Klasse triggern
-                            // Wichtig: 'Scraper()' muss instanziiert werden (oder 'LyricsScraper()', je nachdem wie deine Klasse heißt)
                             val scraper = Scraper(
                                 listOf("AQ.Ab8RN6LVUJMk6voVAOjkfP7KINliCHxX8hQ0SerkmCfJvv373A","AQ.Ab8RN6K2A8ibpzQxiJ-WQsu_yxaVMLZHnauFXRMblx7n1oAjuQ"),
                                 1
@@ -128,7 +211,6 @@ fun ScraperUI() {
                             statusText = "Suche Lyrics für: $artist - $song..."
                             val ergebnis = scraper.fetchJPopLyricsWithSelenium(artist, song)
 
-                            // 4. UI mit den gefundenen Lyrics füttern
                             lyricsOutput = ergebnis
                             statusText = "Suche erfolgreich beendet! 🎉"
 
@@ -160,7 +242,6 @@ fun ScraperUI() {
             }
         }
 
-        // --- RECHTE SEITE: Die Lyrics ---
         Column(modifier = Modifier.weight(1.8f).padding(start = 8.dp)) {
             Text("Gefundene Lyrics", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.secondary)
             Spacer(modifier = Modifier.height(16.dp))
