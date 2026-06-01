@@ -5,8 +5,12 @@ import org.jsoup.Jsoup
 import org.jsoup.select.Elements
 import org.openqa.selenium.chrome.ChromeDriver
 import org.openqa.selenium.chrome.ChromeOptions
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.TextNode
 
 val apiKeys = listOf("AQ.Ab8RN6K2A8ibpzQxiJ-WQsu_yxaVMLZHnauFXRMblx7n1oAjuQ","AQ.Ab8RN6LVUJMk6voVAOjkfP7KINliCHxX8hQ0SerkmCfJvv373A")
+val key = 1
 
 fun main() = runBlocking {
     println("Programm gestartet!")
@@ -41,45 +45,53 @@ fun getSiteScraped(htmlString: String): Elements {
     return googleDoc.select("a")
 }
 
-fun analysiereNachGeniusErgebnissen(htmlString: String): String? {
+fun getSiteGScraped(htmlString: String): Elements {
+    // Wir nutzen Jsoup, um das von Selenium übergebene HTML zu parsen
+    val doc = org.jsoup.Jsoup.parse(htmlString)
 
+    // 🔍 Der magische Selector: Sucht nach allen Links innerhalb von organischen Suchtreffern
+    // Google nutzt für die Haupt-Links meistens das 'jsname'-Attribut oder bestimmte Container
+    return doc.select("a[href]")
+
+}
+
+fun analysiereNachGeniusErgebnissen(htmlString: String): String? {
     var finaleLyricsUrl: String? = null
 
-    val googleLinks = getSiteScraped(htmlString)
+    val googleLinks = getSiteGScraped(htmlString)
 
     println("--- Analysiere Google-Ergebnisse via Selenium ---")
     for (link in googleLinks) {
-        val href = link.attr("href").trim()
-        val text = link.text()
+        var href = link.attr("href").trim()
+        val text = link.text().trim()
 
-        // Google verpackt Links im modernen Layout oft in Weiterleitungen oder Daten-Pfaden
-        if (href.contains(SITE.GENIUS.searchSuffix)) {
+        // 1. Such-Suffix prüfen (z.B. "genius.com")
+        if (href.contains("genius.com")) {
 
-            // Sauber machen, falls Google einen Redirect-Müll drangehängt hat
-            var saubereUrl = href
+            // 2. Brutales Aufräumen von Google-Redirect-Müll
             if (href.contains("/url?q=")) {
-                saubereUrl = href.substringAfter("/url?q=").substringBefore("&")
+                href = href.substringAfter("/url?q=").substringBefore("&")
             } else if (href.contains("?url=")) {
-                saubereUrl = href.substringAfter("?url=").substringBefore("&")
+                href = href.substringAfter("?url=").substringBefore("&")
             }
 
-            // URL dekodieren, falls Zeichen wie slashes verschlüsselt wurden (%2F -> /)
+            // Falls Google Tracking-Müll hinten an die Genius-URL gehängt hat (z.B. ?ved=...)
+            if (href.contains("?")) {
+                href = href.substringBefore("?")
+            }
+
+            // 3. URL dekodieren (%2F -> /)
             try {
-                saubereUrl = java.net.URLDecoder.decode(saubereUrl, java.nio.charset.StandardCharsets.UTF_8.toString())
+                href = java.net.URLDecoder.decode(href, java.nio.charset.StandardCharsets.UTF_8.toString())
             } catch (_: Exception) {}
 
-            // Wir wollen nur die echte Song-Seite treffen!
-            // Wenn es die japanische Seite ist auf Global umstellen
-            if (saubereUrl.contains("/song/")) {
-                val songId = saubereUrl.substringAfter("/song/").trimEnd('/')
+            // 4. Absicherung des Protokolls
+            if (href.startsWith("//")) href = "https:$href"
 
-                finaleLyricsUrl = "https://www.uta-net.com/global/en/lyric/$songId/"
-                break
-            } else if(saubereUrl.contains("/lyric/")) { //Sonst normal global Link
-                // Absicherung gegen relative Protokolle
-                if (saubereUrl.startsWith("//")) saubereUrl = "https:$saubereUrl"
-
-                finaleLyricsUrl = saubereUrl
+            // 5. Überprüfung: Ist es wirklich eine Lyrics-Seite?
+            // Manche Genius-URLs enden nicht exakt auf "-lyrics", sondern haben noch Nummern (z.B. -lyrics-12345)
+            if (href.contains("genius.com/") && !href.contains("/search") && !href.contains("/artists")) {
+                finaleLyricsUrl = href
                 println("🎯 Treffer im HTML entdeckt: '$text' -> $finaleLyricsUrl")
                 break
             }
@@ -105,6 +117,7 @@ fun analysiereNachUtaErgebnissen(htmlString: String): String? {
 
             // Sauber machen, falls Google einen Redirect-Müll drangehängt hat
             var saubereUrl = href
+
             if (href.contains("/url?q=")) {
                 saubereUrl = href.substringAfter("/url?q=").substringBefore("&")
             } else if (href.contains("?url=")) {
@@ -143,8 +156,8 @@ fun fetchJPopLyricsWithSelenium(artist: String, song: String) {
     try {
 
         val utaString = """$artist $song ${SITE.UTA.searchSuffix}"""
-        val geniusString = """$artist $song ${SITE.GENIUS.searchSuffix} romanized"""
-        val nonString = """$artist $song ${SITE.LYRICAL_NONSENSE.searchSuffix} romanized"""
+        val geniusString = """$artist $song ${SITE.GENIUS.searchSuffix}"""
+        val nonString = """$artist $song ${SITE.LYRICAL_NONSENSE.searchSuffix}"""
 
 
         println("🚀 Starte getarnten Chrome-Browser...")
@@ -166,38 +179,47 @@ fun fetchJPopLyricsWithSelenium(artist: String, song: String) {
             //java.io.File("google_debug.html").writeText(driver.pageSource!!)
             //println("📝 Debug-HTML gespeichert unter 'google_debug.html'. Schau da mal rein!")
 
-            //Weiter mit Ai-Sprachflip von Englisch zu Japanischen Zeichen
-            val aiUta = Gemini().optimiereSucheMitInternetGemini(artist, song, apiKeys[1])
-            val aiUtaString = """${aiUta.first} ${aiUta.second} ${SITE.UTA.searchSuffix}"""
-            println("\n Starte zweite Suche mit translated Input!")
-            driver.get("https://www.google.com/search?q=$aiUtaString")
-            println("Ich suche das:https://www.google.com/search?q=$aiUtaString")
+            //Weiter mit Genius Suche
+            println("\n Starte zweite Suche mit Genius!")
+            driver.get("https://www.google.com/search?q=$geniusString")
+            println("Ich suche das:https://www.google.com/search?q=$geniusString")
 
             // Falls ein Captcha kommt Debug
             if (driver.pageSource!!.contains("g-recaptcha")) {
                 println("⚠️ Google fordert ein CAPTCHA!...")
             }
 
-            val finaleAiUtaLyricsURL: String? = analysiereNachUtaErgebnissen(driver.pageSource!!)
+            val finaleGeniusLyricsURL: String? = analysiereNachGeniusErgebnissen(driver.pageSource!!)
 
-            if (finaleAiUtaLyricsURL == null) {
-                println("❌ Auch in der Tiefenanalyse wurde kein Uta-Net Link gefunden.")
+            if (finaleGeniusLyricsURL == null) {
+                println("❌ Auch in der Genius-Analyse wurde kein Link gefunden.")
 
-                //Weiter mit Genius Suche
-                //println("\n Starte dritte Suche mit Genius!")
-                //driver.get("https://www.google.com/search?q=$geniusString")
-                //println("Ich suche das:https://www.google.com/search?q=$geniusString")
+                //Weiter mit Ai-Sprachflip von Englisch zu Japanischen Zeichen
+
+                /*  Tägliches limit erreicht
+
+                val aiUta = Gemini().optimiereSucheMitInternetGemini(artist, song, apiKeys[key])
+                val aiUtaString = """${aiUta.first} ${aiUta.second} ${SITE.UTA.searchSuffix}"""
+                println("\n Starte dritte Suche mit translated Input!")
+                driver.get("https://www.google.com/search?q=$aiUtaString")
+                println("Ich suche das:https://www.google.com/search?q=$aiUtaString")
 
                 // Falls ein Captcha kommt Debug
                 if (driver.pageSource!!.contains("g-recaptcha")) {
                     println("⚠️ Google fordert ein CAPTCHA!...")
                 }
 
-                val finaleGeniusLyricsURL: String? = analysiereNachGeniusErgebnissen(driver.pageSource!!)
+                val finaleAiUtaLyricsURL: String? = analysiereNachUtaErgebnissen(driver.pageSource!!)
 
+                if (finaleAiUtaLyricsURL == null) {
+                    println("❌ Auch in der AI-Analyse wurde kein Uta-Net Link gefunden.")
+                    return
+                }
+
+                utaLyricsLaden(finaleAiUtaLyricsURL, artist, song) */
                 return
             }
-            utaLyricsLaden(finaleAiUtaLyricsURL, artist, song)
+            geniusLyricsLaden(finaleGeniusLyricsURL, artist, song)
             return
         }
 
@@ -249,6 +271,54 @@ fun utaLyricsLaden(finaleUtaLyricsURL: String, artist: String, song: String) {
     }
 
     println("================================\n")
+}
+
+fun extrahiereGeniusLyricsMitJsoupUndAbsaetzen(htmlQuelltext: String): String {
+    val doc: Document = Jsoup.parse(htmlQuelltext)
+    val containers = doc.select("div[data-lyrics-container=true]")
+    val lyricsBuilder = StringBuilder()
+
+    for (container in containers) {
+        // Wir gehen tiefer in die Struktur und holen ALLE Unterelemente und Textstücke
+        for (node in container.childNodes()) {
+            when (node) {
+                is TextNode -> {
+                    // Normaler Text (Teil einer Zeile)
+                    lyricsBuilder.append(node.text())
+                }
+                is Element -> {
+                    if (node.tagName() == "br") {
+                        // EIN <br> sorgt für eine neue Zeile.
+                        // Wenn Genius zwei hintereinander hat, feuert das hier zweimal = leerer Absatz!
+                        lyricsBuilder.append("\n")
+                    } else {
+                        // Wenn es ein Link oder Span ist, holen wir den Text dadrinnen (z.B. ein einzelnes Wort)
+                        lyricsBuilder.append(node.text())
+                    }
+                }
+            }
+        }
+        // Nach jedem Container (oft markiert Genius damit Strophen) machen wir einen fetten Absatz
+        lyricsBuilder.append("\n\n")
+    }
+
+    // Am Ende säubern wir noch unschöne dreifache Leerzeilen, falls Genius übertrieben hat
+    return lyricsBuilder.toString()
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+
+fun geniusLyricsLaden(finaleGeniusLyricsURL: String, artist: String, song: String) {
+    // Lyrics-Seite über Jsoup laden
+    println("Rufe Lyrics ab von: $finaleGeniusLyricsURL")
+    val lyricsDoc = Jsoup.connect(finaleGeniusLyricsURL)
+        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        .get()
+
+    println("\n====== J-POP LYRICS FOUND ======")
+    println("Künstler: $artist | Song: $song")
+    println("--------------------------------")
+    println(extrahiereGeniusLyricsMitJsoupUndAbsaetzen(lyricsDoc.html()))
 }
 
 fun getProtectedGoogleDriver(): ChromeDriver {
