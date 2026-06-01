@@ -1,15 +1,35 @@
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.9.22'
+    id 'org.jetbrains.kotlin.jvm' version '2.0.0'
+    id("org.jetbrains.compose") version "1.7.0"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
 }
 
 group = 'org.example'
 version = '1.0-SNAPSHOT'
 
 repositories {
+    google()
+
     mavenCentral()
 }
 
 dependencies {
+    // Die explizite String-Schreibweise für Compose Desktop
+    implementation("org.jetbrains.compose.desktop:desktop-jvm:1.7.0")
+
+    // 1. Die Hauptkomponenten für Compose Desktop
+    implementation("org.jetbrains.compose.runtime:runtime-desktop:1.7.0")
+    implementation("org.jetbrains.compose.ui:ui-desktop:1.7.0")
+    implementation("org.jetbrains.compose.foundation:foundation-desktop:1.7.0")
+    implementation("org.jetbrains.compose.material3:material3-desktop:1.7.0")
+
+    // 🌟 2. DIE RETTUNG: Der native Grafiktreiber für Windows x64 (erzwingt die .dll)
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.8.15")
+
+    // Und für die Material 3 Designs, die wir im Code nutzen:
+    implementation("org.jetbrains.compose.material3:material3:1.6.11")
+
+
     // Spotify API Wrapper & Jackson-Fixes gegen die Sicherheitslücke
     implementation 'se.michaelthelin.spotify:spotify-web-api-java:8.4.0'
     implementation 'com.fasterxml.jackson.core:jackson-core:2.21.1'
